@@ -1,0 +1,37 @@
+Short:        libxmp 4.7.3 link library for AmigaOS 3.x
+Author:       Claudio Matsuoka, Hipolito Carraro Jr and libxmp's contributors
+Uploader:     AmiCradle Team
+Type:         dev/lib
+Version:      4.7.3
+Requires:     m68k-amigaos-gcc (bebbo's, GCC 6.5 or 16), libnix
+Architecture: m68k-amigaos >= 3.0
+
+libxmp plays MOD, XM, S3M, IT, MED, Oktalyzer, DigiBooster and some 90
+module formats. This is libxmp 4.7.3, unchanged, built for AmigaOS 3.x
+with libnix (-noixemul), as a static link library. It has every loader,
+the depackers (PowerPacker, XPK through xfd-style formats, LhA, ZIP,
+gzip, bzip2, xz and more; they unpack to T:) and ProWizard.
+
+  include/xmp.h
+  lib/libxmp.a              68040 with an FPU (-m68040 -m68881)
+  lib/68000/libxmp.a        any 68k, soft float (-m68000)
+  lib/pkgconfig/libxmp.pc   and lib/68000/pkgconfig/libxmp.pc
+  examples/xmp-render.c     load a module, mix it to raw PCM
+  docs/                     libxmp's README, COPYING, CREDITS, Changelog,
+                            the API reference (libxmp.html), the formats,
+                            and the notices of the code it bundles
+
+Build with -DLIBXMP_STATIC (the .pc files add it). Link with the same
+CPU and FPU flags as the library: a -m68881 program with lib/, any other
+with lib/68000/.
+
+  m68k-amigaos-gcc -O2 -m68040 -m68881 -noixemul -DLIBXMP_STATIC \
+      -Iinclude examples/xmp-render.c -Llib -lxmp -lm -o xmp-render
+
+Built with GCC 16.2: -O2 -fomit-frame-pointer -mno-bitfield
+-fno-delete-null-pointer-checks -fno-tree-loop-distribute-patterns, and
+checked for GCC 16's misplaced float-to-int store at -m68040 (none).
+
+libxmp is MIT licensed (docs/COPYING); the code it bundles keeps its own
+permissive licences (docs/bundled-notices.txt). This build: AmiCradle
+Team, https://github.com/DalsinAI/openamigaaudiotools

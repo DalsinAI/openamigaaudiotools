@@ -1,0 +1,147 @@
+# Copyright (c) 2026 AmiCradle Team. MIT licence.
+# Repo guard: takes tool attribution lines out of PR descriptions, issues,
+# comments and reviews as soon as they are posted or edited, and fails any
+# push whose commit messages carry them or whose commits aren't SacredTrees'.
+# It also takes out what other review bots leave (their comments go, their
+# review text is blanked). "Run workflow" (Actions tab) sweeps every PR, issue,
+# comment and review the repository already has, and the sweep runs on its own
+# every three days.
+name: Repo guard
+on:
+  pull_request_target:
+    types: [opened, edited, reopened]
+  issues:
+    types: [opened, edited]
+  issue_comment:
+    types: [created, edited]
+  pull_request_review:
+    types: [submitted, edited]
+  pull_request_review_comment:
+    types: [created, edited]
+  push:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 4 */3 * *'
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+concurrency:
+  # one group per item, so a burst of comments never cancels a queued run
+  group: repo-guard-${{ github.event_name }}-${{ github.event.comment.id || github.event.review.id || github.event.pull_request.number || github.event.issue.number || github.sha }}
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        with:
+          script: |
+            // The names are kept encoded so this file doesn't carry them.
+            const n = s => Buffer.from(s, 'base64').toString();
+            const A = n('Y2xhdWRl'), B = n('YW50aHJvcGlj');
+            const bad = [
+              new RegExp(`<!--\\s*${A}-projects-attribution`, 'i'),
+              new RegExp(`${A}\\.(ai|com)/`, 'i'),
+              new RegExp(`generated (by|with) \\[?${A}`, 'i'),
+              new RegExp(`^\\s*co-authored-by:.*(${A}|${B})`, 'i'),
+              new RegExp(`^\\s*${A}-session:`, 'i'),
+              new RegExp(`noreply@${B}\\.com`, 'i'),
+            ];
+            const isBad = l => bad.some(r => r.test(l));
+            // other review bots: their comments are deleted, their review text blanked
+            const bots = new RegExp(`(${n('Y29kZXg=')}|${n('Z3Jvaw==')})`, 'i');
+            const isBot = u => !!u && u.type === 'Bot' && bots.test(u.login || '');
+            const BLANK = '<!-- removed -->';
+            const blank = t => /^\s*(<!--[\s\S]*?-->\s*)*$/.test(t || '');
+            function clean(text) {
+              if (!text) return text;
+              const lines = text.split(/\r?\n/);
+              if (!lines.some(isBad)) return text;
+              const out = lines.filter(l => !isBad(l));
+              // drop a rule or blank lines left dangling at the end
+              while (out.length && /^\s*(---+|\*\*\*+|___+)?\s*$/.test(out[out.length - 1])) out.pop();
+              let s = out.join('\n').replace(/\n{3,}/g, '\n\n').replace(/^\s*\n/, '');
+              return s.trim() ? s : 'AmiCradle Team';
+            }
+            const { owner, repo } = context.repo;
+            const ev = context.eventName, p = context.payload;
+            let fixed = 0, skipped = 0;
+            // one unreadable or locked item must not stop the rest
+            async function attempt(what, fn) {
+              try { return await fn(); }
+              catch (e) { skipped++; core.warning(`${what}: ${e.status || ''} ${String(e.message).split('\n')[0]}`); }
+            }
+            async function fix(kind, body, update) {
+              const c = clean(body);
+              if (c === body || c == null) return;
+              await attempt(kind, async () => {
+                await update(c);
+                fixed++;
+                core.info(`cleaned ${kind}`);
+              });
+            }
+            const prBody = (num, body) => fix(`PR #${num}`, body,
+              b => github.rest.pulls.update({ owner, repo, pull_number: num, body: b }));
+            const issueBody = (num, body) => fix(`issue #${num}`, body,
+              b => github.rest.issues.update({ owner, repo, issue_number: num, body: b }));
+            const fixComment = c => fix(`comment ${c.id}`, c.body,
+              b => github.rest.issues.updateComment({ owner, repo, comment_id: c.id, body: b }));
+            const drop = (kind, fn) => attempt(kind, async () => { await fn(); fixed++; core.info(`removed ${kind}`); });
+            const comment = c => isBot(c.user)
+              ? drop(`bot comment ${c.id}`, () => github.rest.issues.deleteComment({ owner, repo, comment_id: c.id }))
+              : fixComment(c);
+            const updateReview = (num, r, b) => github.rest.pulls.updateReview({ owner, repo, pull_number: num, review_id: r.id, body: b });
+            const review = (num, r) => isBot(r.user)
+              ? (!blank(r.body) ? drop(`bot review ${r.id} on #${num}`, () => updateReview(num, r, BLANK)) : undefined)
+              : fix(`review ${r.id} on #${num}`, r.body, b => updateReview(num, r, b));
+            const reviewComment = c => isBot(c.user)
+              ? drop(`bot review comment ${c.id}`, () => github.rest.pulls.deleteReviewComment({ owner, repo, comment_id: c.id }))
+              : fix(`review comment ${c.id}`, c.body,
+                  b => github.rest.pulls.updateReviewComment({ owner, repo, comment_id: c.id, body: b }));
+
+            // read the item as it is now, so a later edit is never overwritten
+            const now = async (what, fn) => (await attempt(what, fn) || {}).data;
+            let cur;
+            if (ev === 'pull_request_target') {
+              if (cur = await now(`PR #${p.pull_request.number}`, () => github.rest.pulls.get({ owner, repo, pull_number: p.pull_request.number })))
+                await prBody(cur.number, cur.body);
+            } else if (ev === 'issues') {
+              if (cur = await now(`issue #${p.issue.number}`, () => github.rest.issues.get({ owner, repo, issue_number: p.issue.number })))
+                await issueBody(cur.number, cur.body);
+            } else if (ev === 'issue_comment') {
+              if (cur = await now(`comment ${p.comment.id}`, () => github.rest.issues.getComment({ owner, repo, comment_id: p.comment.id })))
+                await comment(cur);
+            } else if (ev === 'pull_request_review') {
+              if (cur = await now(`review ${p.review.id}`, () => github.rest.pulls.getReview({ owner, repo, pull_number: p.pull_request.number, review_id: p.review.id })))
+                await review(p.pull_request.number, cur);
+            } else if (ev === 'pull_request_review_comment') {
+              if (cur = await now(`review comment ${p.comment.id}`, () => github.rest.pulls.getReviewComment({ owner, repo, comment_id: p.comment.id })))
+                await reviewComment(cur);
+            }
+            else if (ev === 'push') {
+              const hits = (p.commits || []).filter(c => c.message.split('\n').some(isBad));
+              for (const c of hits) core.error(`commit ${c.id.slice(0, 8)} carries a tool attribution line: ${c.message.split('\n')[0]}`);
+              // only SacredTrees commits here; GitHub itself commits web merges
+              const ours = e => /^(121399723\+SacredTrees@users\.noreply\.github\.com|noreply@github\.com)$/i.test(e || '');
+              const who = (p.commits || []).filter(c => !ours(c.author && c.author.email) || !ours(c.committer && c.committer.email));
+              for (const c of who) core.error(`commit ${c.id.slice(0, 8)}: author ${c.author.email}, committer ${c.committer.email}; only SacredTrees commits here`);
+              if (hits.length || who.length)
+                core.setFailed(`${hits.length} commit(s) carry tool attribution lines, ${who.length} not committed as SacredTrees; fix them before merging`);
+            } else if (ev === 'workflow_dispatch' || ev === 'schedule') {
+              for await (const { data } of github.paginate.iterator(github.rest.issues.listForRepo, { owner, repo, state: 'all', per_page: 100 })) {
+                for (const it of data) {
+                  if (it.pull_request) {
+                    await prBody(it.number, it.body);
+                    const reviews = await attempt(`reviews on #${it.number}`, () =>
+                      github.paginate(github.rest.pulls.listReviews, { owner, repo, pull_number: it.number, per_page: 100 })) || [];
+                    for (const r of reviews) await review(it.number, r);
+                  } else await issueBody(it.number, it.body);
+                }
+              }
+              for await (const { data } of github.paginate.iterator(github.rest.issues.listCommentsForRepo, { owner, repo, per_page: 100 }))
+                for (const c of data) await comment(c);
+              for await (const { data } of github.paginate.iterator(github.rest.pulls.listReviewCommentsForRepo, { owner, repo, per_page: 100 }))
+                for (const c of data) await reviewComment(c);
+            }
+            core.notice(`repo guard: ${fixed} item(s) cleaned, ${skipped} skipped`);

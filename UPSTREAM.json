@@ -1,0 +1,46 @@
+{
+ "stb_vorbis": {
+  "version": "1.22",
+  "url": "https://raw.githubusercontent.com/nothings/stb/4e9b368bfc071e97206ea5c6adba68dd0cbf8897/stb_vorbis.c",
+  "file": "stb_vorbis.c",
+  "sha256": "4c7cb2ff1f7011e9d67950446b7eb9ca044f2e464d76bfbb0b84dd2e23e65636",
+  "licence": "public domain or MIT (Sean Barrett)",
+  "used_for": "ogg2iff, x2iff: Ogg Vorbis",
+  "patches": [
+   "patches/stb_vorbis-1.22-comment-list-null.patch"
+  ]
+ },
+ "dr_mp3": {
+  "version": "0.7.4",
+  "url": "https://raw.githubusercontent.com/mackron/dr_libs/35b5c392cc15456736c440a68dbe073178bbffe0/dr_mp3.h",
+  "file": "dr_mp3.h",
+  "sha256": "f5c8020eeebb79877184432efdd2651f24869f5bb8f379d45450fd0aed1ee915",
+  "licence": "public domain or MIT-0 (David Reid; based on minimp3, CC0)",
+  "used_for": "mp32iff, x2iff: MP3"
+ },
+ "dr_wav": {
+  "version": "0.14.6",
+  "url": "https://raw.githubusercontent.com/mackron/dr_libs/35b5c392cc15456736c440a68dbe073178bbffe0/dr_wav.h",
+  "file": "dr_wav.h",
+  "sha256": "fad60f1e360d6de726efc1b9a7985610c89c551719e3f110e8b992f0e1f308cd",
+  "licence": "public domain or MIT-0 (David Reid)",
+  "used_for": "wav2iff, x2iff: WAV, AIFF/AIFC, W64, RF64"
+ },
+ "dr_flac": {
+  "version": "0.13.4",
+  "url": "https://raw.githubusercontent.com/mackron/dr_libs/35b5c392cc15456736c440a68dbe073178bbffe0/dr_flac.h",
+  "file": "dr_flac.h",
+  "sha256": "b8078eeb5d523502eb7964508cd7ec8450bc79d383bec90aa17fd9e2fefd9c24",
+  "licence": "public domain or MIT-0 (David Reid)",
+  "used_for": "flac2iff, x2iff: FLAC"
+ },
+ "libxmp": {
+  "version": "4.7.3",
+  "url": "https://github.com/libxmp/libxmp/releases/download/libxmp-4.7.3/libxmp-4.7.3.tar.gz",
+  "file": "libxmp-4.7.3.tar.gz",
+  "dir": "libxmp-4.7.3",
+  "sha256": "b6a98797e4fb9c9a705f5d53112aa5214561857e929a644928b9e658930d9440",
+  "licence": "MIT (Claudio Matsuoka and Hipolito Carraro Jr; see docs/COPYING for the parts it bundles)",
+  "used_for": "mod2iff, x2iff: tracker modules; and the Amiga release of libxmp"
+ }
+}

@@ -1,0 +1,45 @@
+Short:        Ogg/MP3/WAV/FLAC/MOD to AIFF/8SVX, through datatypes
+Author:       AmiCradle Team
+Uploader:     AmiCradle Team
+Type:         mus/misc
+Version:      1.0
+Requires:     AmigaOS 3.0+, 68040 + FPU, GFOpenDatatypes (gfopenaiff,
+              gfopenwave, gfopensound 47.2, gfopenmodule 47.4)
+Architecture: m68k-amigaos >= 3.0
+
+OpenAmigaAudioTools turns sounds and music into what an Amiga plays with
+no decoding: 16-bit big-endian AIFF (the default), IFF 8SVX for Paula,
+WAV, or raw PCM.
+
+  C/ogg2iff   C/mp32iff   C/wav2iff   C/flac2iff   C/mod2iff   C/x2iff
+
+They are one program under six names. Every read and every save goes
+through datatypes:
+
+  - A sound opens with NewDTObject, so whatever sound datatypes you have
+    installed are inputs too. It is read a piece at a time with
+    OIM_READSOUND where the datatype offers it.
+  - The result is saved by gfopenaiff.datatype or gfopenwave.datatype
+    (AIFF, WAV, raw PCM), or by sound.datatype (8SVX), with DTM_WRITE.
+  - --verify opens each result again through the datatypes.
+
+  x2iff -r 22050 Music:theme.ogg TO RAM:theme.aiff
+  mod2iff -f 8svx -m -r 11025 Mods/ -o Sfx/
+  x2iff --info Music:theme.ogg
+
+Options: -f aiff|8svx|wav|raw, -o, -r rate, -m mono, -b 8|16 (TPDF
+dither on 8-bit), -e big|little, -u, -n[=dB] normalise, -g dB, -s/-t/-l
+seconds, -T[=dB] trim silence, -q 0|1|2, -i, -v, --interp, --verify.
+"x2iff -h" lists them all.
+
+A datatype keeps the result in memory until it saves it: allow about
+5 MB a minute of 22 kHz stereo 16-bit audio. Ogg Vorbis and MP3 are
+decoded in soft float by gfopensound.datatype, slowly; FLAC and modules
+are quick. On a PC the same tools for Linux carry their own decoders
+(openamigaaudiotools-1.0-linux-*.tar.gz).
+
+Not yet run on an Amiga: built and checked on the PC.
+
+Source: https://github.com/DalsinAI/openamigaaudiotools
+MIT, Copyright (c) 2026 AmiCradle Team. No third-party code in these
+programs.

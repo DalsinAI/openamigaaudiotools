@@ -1,0 +1,20 @@
+stb_vorbis 1.22: a damaged comment header (its count read, the list not
+allocated) left comment_list NULL with comment_list_length set, and
+vorbis_deinit read comment_list[i] through it. Found by tests/test-sound.sh's
+damaged files under UBSan. MIT, Copyright (c) 2026 AmiCradle Team.
+
+--- a/stb_vorbis.c
++++ b/stb_vorbis.c
+@@ -4210,8 +4210,10 @@
+    int i,j;
+ 
+    setup_free(p, p->vendor);
+-   for (i=0; i < p->comment_list_length; ++i) {
+-      setup_free(p, p->comment_list[i]);
++   if (p->comment_list) {
++      for (i=0; i < p->comment_list_length; ++i) {
++         setup_free(p, p->comment_list[i]);
++      }
+    }
+    setup_free(p, p->comment_list);
+ 
