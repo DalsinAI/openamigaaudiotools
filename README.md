@@ -19,6 +19,12 @@ Each one writes:
 - **IFF 8SVX**, 8-bit signed, mono or stereo (`CHAN`), for Paula and the
   classic players.
 - **WAV**.
+- **IMA ADPCM WAV** (`-f adpcm`), mono, 1024-byte blocks of 2041 samples:
+  a game port's music fallback, a quarter of 16-bit PCM's size, which the
+  ports' mixers decode as they play. Byte for byte what the ports'
+  `amiga/tools/ogg2wav.py adpcm` writes from the same samples. A game's
+  installer makes it from the port's Ogg only when the player asks
+  (backlog BL-143).
 - **raw PCM**, 8 or 16-bit, in either byte order.
 
 Also here: **libxmp 4.7.3 for AmigaOS 3.x**, a link library for the 68040
@@ -36,7 +42,10 @@ programs hold no decoders of their own; the same program under six names.
 - **Save:** the result goes out through `DTM_WRITE`.
   - AIFF, WAV and raw PCM: `gfopenaiff.datatype` or `gfopenwave.datatype`.
   - 8SVX: sound.datatype's own writer.
-- **`--verify`** opens what was written again through the datatypes.
+  - IMA ADPCM: no datatype writes it, so the program encodes and writes it
+    itself (`src/imaadpcm.c`, our own code, the same on the PC).
+- **`--verify`** opens what was written again through the datatypes (IMA
+  ADPCM: read back by the program's own decoder).
 
 Where a format had no datatype, or no way for a program to read or save
 it, the missing piece was added to
@@ -69,7 +78,7 @@ copy.
 
 ## Options
 
-    -f, --format aiff|8svx|wav|raw   (default aiff)
+    -f, --format aiff|8svx|wav|raw|adpcm   (default aiff; adpcm is mono)
     -o, --output FILE|DIR      a folder when there are several inputs or a folder in
     -r, --rate HZ              resample: 22050, 11025, 28867 (Paula), any rate 1000-192000
     -m, --mono                 downmix
@@ -109,7 +118,7 @@ The order of work is: decode, cut, downmix, gain, resample, quantise
 
 ## Tests
 
-`make test`, or `tests/check.py build/host`: 92 checks on the PC.
+`make test`, or `tests/check.py build/host`: 104 checks on the PC.
 
 - **Format checks:** each file written is read by a strict parser written
   from its specification (EA IFF 85 / 8SVX with CHAN, AIFF 1.3, RIFF
@@ -123,6 +132,10 @@ The order of work is: decode, cut, downmix, gain, resample, quantise
   over the new Nyquist frequency is gone), raw byte orders, batches, the
   `mod.` prefix, and the refusal to overwrite an input.
 - **x2iff** writes byte for byte what each single tool writes.
+- **IMA ADPCM:** a strict parse of the file, byte for byte against the
+  ports' `ogg2wav.py` encoder fed the same samples, the tones' levels
+  after decoding, an empty sound, and a drawer batch (`name.ogg` gives
+  `name.wav` beside it).
 
 The inputs in `tests/` are our own (`tests/mkinputs.py`, CC0). The
 datatypes have their own tests in GFOpenDatatypes (`tests/test-pcm.sh`,

@@ -27,7 +27,7 @@
 #ifndef X2IFF_NAME
 #define X2IFF_NAME "x2iff"
 #endif
-#define X2IFF_VERSION "1.0"
+#define X2IFF_VERSION "1.1"
 
 #if defined(__amigaos__) || defined(AMIGA)
 #define X2IFF_AMIGA 1

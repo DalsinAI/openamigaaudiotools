@@ -25,17 +25,18 @@
 #include <sys/types.h>
 
 #include "x2iff.h"
+#include "imaadpcm.h"
 
 #ifdef X2IFF_AMIGA
 #include <exec/tasks.h>
 #include <proto/exec.h>
 static const char verstag[] __attribute__((used)) =
-    "$VER: " X2IFF_NAME " " X2IFF_VERSION " (07.11.2026) OpenAmigaAudioTools";
+    "$VER: " X2IFF_NAME " " X2IFF_VERSION " (24.11.2026) OpenAmigaAudioTools";
 #endif
 
-enum { F_AIFF, F_8SVX, F_WAV, F_RAW };
-static const char *const fmt_name[] = { "aiff", "8svx", "wav", "raw" };
-static const char *const fmt_ext[] = { ".aiff", ".8svx", ".wav", ".raw" };
+enum { F_AIFF, F_8SVX, F_WAV, F_RAW, F_ADPCM, F_COUNT };
+static const char *const fmt_name[] = { "aiff", "8svx", "wav", "raw", "adpcm" };
+static const char *const fmt_ext[] = { ".aiff", ".8svx", ".wav", ".raw", ".wav" };
 
 static void die_oom(void)
 {
@@ -90,6 +91,8 @@ typedef struct {
     short *acc;         /* the Amiga: the sound, kept for the datatype that saves it */
     unsigned long cap;  /* frames acc has room for */
 } Writer;
+
+static int adpcm_open(Writer *w, const Opts *o, const char *path, int ch, long rate);
 
 static unsigned long rng_next(unsigned long *s)
 {
@@ -178,6 +181,7 @@ static int write_header(Writer *w, int final)
 
 static int writer_open(Writer *w, const Opts *o, const char *path, int ch, long rate)
 {
+    if (o->fmt == F_ADPCM) return adpcm_open(w, o, path, ch, rate);
     memset(w, 0, sizeof *w);
     w->o = o;
     w->fmt = o->fmt;
@@ -227,12 +231,67 @@ static int quant(Writer *w, float x, int bits)
     return v;
 }
 
+/* The sound kept whole, quantised as it would be written (8-bit: dithered,
+ * in the high byte): on the Amiga for the datatype that saves it, and on
+ * both for IMA ADPCM, which is encoded at the end. */
+static int acc_put(Writer *w, float *const *in, int n)
+{
+    int i, c;
+    if (w->frames + n > w->cap) {
+        unsigned long cap = w->cap ? w->cap * 2 : 65536;
+        short *a;
+        while (cap < w->frames + n) cap *= 2;
+        if (!(a = realloc(w->acc, cap * w->ch * sizeof *a))) {
+            fprintf(stderr, X2IFF_NAME ": out of memory for %lu frames (the sound is saved whole)\n", cap);
+            return -1;
+        }
+        w->acc = a;
+        w->cap = cap;
+    }
+    for (i = 0; i < n; i++)
+        for (c = 0; c < w->ch; c++) {
+            int v = quant(w, in[c][i], w->bits);
+            w->acc[(w->frames + i) * w->ch + c] = (short)(w->bits == 8 ? v * 256 : v);
+        }
+    w->frames += n;
+    return 0;
+}
+
+/* IMA ADPCM: the kept sound encoded and written by x2iff itself (no
+ * datatype writes it); a failed write leaves no file. */
+static int adpcm_save(Writer *w)
+{
+    FILE *f = fopen(w->path, "wb");
+    int r = f ? ima_write_wav(f, w->acc, w->frames, w->rate) : -1;
+    if (f && fclose(f)) r = -1;
+    if (r) {
+        fprintf(stderr, X2IFF_NAME ": error writing %s\n", w->path);
+        remove(w->path);
+    }
+    return r;
+}
+
+static int adpcm_open(Writer *w, const Opts *o, const char *path, int ch, long rate)
+{
+    memset(w, 0, sizeof *w);
+    w->o = o;
+    w->fmt = F_ADPCM;
+    w->ch = ch;
+    w->rate = rate;
+    w->bits = 16;
+    w->rng = 0x2545f491UL;
+    w->path = xcalloc(strlen(path) + 1, 1);
+    strcpy(w->path, path);
+    w->f = (FILE *)1;               /* open, as far as convert() cares */
+    return 0;
+}
+
 #ifdef X2IFF_AMIGA
-/* The Amiga: the sound is kept, quantised as it would be written (8-bit:
- * dithered, in the high byte), and saved through datatypes at the end
- * (dtio.c's dt_save). */
+/* The Amiga: the sound is kept (acc_put) and saved through datatypes at
+ * the end (dtio.c's dt_save); IMA ADPCM by adpcm_save. */
 static int writer_open(Writer *w, const Opts *o, const char *path, int ch, long rate)
 {
+    if (o->fmt == F_ADPCM) return adpcm_open(w, o, path, ch, rate);
     memset(w, 0, sizeof *w);
     w->o = o;
     w->fmt = o->fmt;
@@ -248,30 +307,12 @@ static int writer_open(Writer *w, const Opts *o, const char *path, int ch, long 
 
 static int writer_put(Writer *w, float *const *in, int n)
 {
-    int i, c;
-    if (w->frames + n > w->cap) {
-        unsigned long cap = w->cap ? w->cap * 2 : 65536;
-        short *a;
-        while (cap < w->frames + n) cap *= 2;
-        if (!(a = realloc(w->acc, cap * w->ch * sizeof *a))) {
-            fprintf(stderr, X2IFF_NAME ": out of memory for %lu frames (the datatype saves the sound whole)\n", cap);
-            return -1;
-        }
-        w->acc = a;
-        w->cap = cap;
-    }
-    for (i = 0; i < n; i++)
-        for (c = 0; c < w->ch; c++) {
-            int v = quant(w, in[c][i], w->bits);
-            w->acc[(w->frames + i) * w->ch + c] = (short)(w->bits == 8 ? v * 256 : v);
-        }
-    w->frames += n;
-    return 0;
+    return acc_put(w, in, n);
 }
 
 static int writer_close(Writer *w, int ok)
 {
-    int r = ok ? dt_save(w->path, w->fmt, w->bits, w->o->big_endian, w->o->unsigned8,
+    int r = !ok ? -1 : w->fmt == F_ADPCM ? adpcm_save(w) : dt_save(w->path, w->fmt, w->bits, w->o->big_endian, w->o->unsigned8,
                          w->acc, w->frames, w->ch, w->rate) : -1;
     free(w->acc);
     free(w->path);
@@ -283,7 +324,9 @@ static int writer_put(Writer *w, float *const *in, int n)
 {
     unsigned char *p = w->buf;
     int i, c;
-    int be = w->fmt == F_AIFF || w->fmt == F_8SVX || (w->fmt == F_RAW && w->o->big_endian);
+    int be;
+    if (w->fmt == F_ADPCM) return acc_put(w, in, n);
+    be = w->fmt == F_AIFF || w->fmt == F_8SVX || (w->fmt == F_RAW && w->o->big_endian);
     int u8 = w->fmt == F_WAV || (w->fmt == F_RAW && w->o->unsigned8);
 
     if (w->fmt == F_8SVX && w->ch == 2) {
@@ -315,6 +358,12 @@ static int writer_close(Writer *w, int ok)
     int r = ok ? 0 : -1;
     unsigned long data = w->frames * w->ch * (w->bits / 8);
 
+    if (w->fmt == F_ADPCM) {
+        if (r == 0) r = adpcm_save(w);
+        free(w->acc);
+        free(w->path);
+        return r;
+    }
     if (r == 0 && w->right) {
         size_t got;
         if (fseek(w->right, 0, SEEK_SET)) r = -1;
@@ -700,7 +749,18 @@ static int convert(const Opts *o, const char *in, const char *outpath)
         unsigned long fr = 0;
         int vch = 0;
         long vrate = 0;
-        if (dt_probe(outpath, &fr, &vch, &vrate)) {
+        int bad = 1;
+        if (o->fmt == F_ADPCM) {
+            /* no datatype reads IMA ADPCM: read it back with our own decoder */
+            FILE *f = fopen(outpath, "rb");
+            if (f) {
+                bad = ima_read_wav(f, &fr, &vrate, NULL);
+                vch = 1;
+                fclose(f);
+            }
+        } else
+            bad = dt_probe(outpath, &fr, &vch, &vrate);
+        if (bad) {
             fprintf(stderr, X2IFF_NAME ": %s: no sound datatype reads it back\n", outpath);
             r = -1;
         } else if (fr != w.frames || vrate != orate || vch != och) {
@@ -840,7 +900,9 @@ X2IFF_NAME " " X2IFF_VERSION " (OpenAmigaAudioTools): to AIFF, IFF 8SVX, WAV or 
 "reads:%s\n"
 "usage: " X2IFF_NAME " [options] IN|DIR ...\n"
 "  -f, --format F      aiff (default; 16-bit big-endian, the 68k's order),\n"
-"                      8svx (8-bit signed, Paula), wav (little-endian), raw\n"
+"                      8svx (8-bit signed, Paula), wav (little-endian), raw,\n"
+"                      adpcm (IMA ADPCM WAV, mono, 2041-sample blocks: a\n"
+"                      game port's music; implies --mono)\n"
 "  -o, --output P      output file, or a directory for several inputs or a DIR\n"
 "  -r, --rate HZ       resample, e.g. 22050, 11025, 28867\n"
 "  -m, --mono          downmix to mono\n"
@@ -925,11 +987,11 @@ static int real_main(int argc, char **argv)
         else if (IS("-f", "--format")) {
             const char *v = arg_val(argc, argv, &i, eq);
             int k;
-            for (k = 0; k < 4; k++) if (!strcmp(v, fmt_name[k])) break;
+            for (k = 0; k < F_COUNT; k++) if (!strcmp(v, fmt_name[k])) break;
             if (!strcmp(v, "iff")) k = F_8SVX;
             if (!strcmp(v, "aif")) k = F_AIFF;
             if (!strcmp(v, "pcm")) k = F_RAW;
-            if (k == 4) { fprintf(stderr, X2IFF_NAME ": unknown format %s\n", v); return 10; }
+            if (k == F_COUNT) { fprintf(stderr, X2IFF_NAME ": unknown format %s\n", v); return 10; }
             o.fmt = k;
         }
         else if (IS("-o", "--output")) o.out = arg_val(argc, argv, &i, eq);
@@ -975,6 +1037,10 @@ static int real_main(int argc, char **argv)
     }
     if (!nin) { usage(stderr); return 10; }
     if (o.bits && o.bits != 8 && o.bits != 16) { fprintf(stderr, X2IFF_NAME ": bits is 8 or 16\n"); return 10; }
+    if (o.fmt == F_ADPCM) {
+        if (o.bits == 8) { fprintf(stderr, X2IFF_NAME ": IMA ADPCM is made from 16-bit samples\n"); return 10; }
+        o.mono = 1;     /* the ports' mixers play mono ADPCM */
+    }
     if (o.fmt == F_8SVX && o.bits == 16) {
         fprintf(stderr, X2IFF_NAME ": 8SVX is 8-bit; use aiff for 16-bit\n");
         return 10;
