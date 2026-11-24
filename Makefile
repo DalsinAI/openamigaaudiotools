@@ -77,22 +77,22 @@ $(eval $(call xmp_lib,build/host,$(HOST_CC),ar,$(HOST_CFLAGS)))
 $(eval $(call xmp_lib,build/amiga,$(AMIGA_CC),$(AMIGA_AR),$(AMIGA_CFLAGS) -idirafter $(OPENNDK)))
 $(eval $(call xmp_lib,build/amiga-000,$(AMIGA_CC),$(AMIGA_AR),$(AMIGA_BASE) -m68000 -idirafter $(OPENNDK)))
 
-SRC := src/x2iff.c src/sources.c src/x2iff.h
+SRC := src/x2iff.c src/sources.c src/imaadpcm.c src/x2iff.h src/imaadpcm.h
 # $(call tool,DIR,CC,CFLAGS,NAME)
 define tool
 $(1)/$(4): $(SRC) $(UP)/.fetched $(if $(findstring XMP,$(D_$(4))),$(1)/libxmp.a)
 	@mkdir -p $(1)
 	$(2) $(3) -DX2IFF_NAME='"$(4)"' $(D_$(4)) -I$(UP)/patched -I$(UP) -I$(XMP)/include -o $$@ \
-	  src/x2iff.c src/sources.c $(if $(findstring XMP,$(D_$(4))),$(1)/libxmp.a) -lm
+	  src/x2iff.c src/sources.c src/imaadpcm.c $(if $(findstring XMP,$(D_$(4))),$(1)/libxmp.a) -lm
 endef
 $(foreach t,$(TOOLS),$(eval $(call tool,build/host,$(HOST_CC),$(HOST_CFLAGS),$(t))))
 # The Amiga: the same converter over datatypes (src/dtio.c), no decoders;
 # the programs differ only in their names.
 define amiga_tool
-build/amiga/$(1): src/x2iff.c src/dtio.c src/x2iff.h
+build/amiga/$(1): src/x2iff.c src/dtio.c src/imaadpcm.c src/x2iff.h src/imaadpcm.h
 	@mkdir -p build/amiga
 	$(AMIGA_CC) $(AMIGA_CFLAGS) -Wall -idirafter $(OPENNDK) -DX2IFF_NAME='"$(1)"' -o $$@ \
-	  src/x2iff.c src/dtio.c -lamiga -lm
+	  src/x2iff.c src/dtio.c src/imaadpcm.c -lamiga -lm
 endef
 $(foreach t,$(TOOLS),$(eval $(call amiga_tool,$(t))))
 

@@ -286,6 +286,7 @@ def main():
     check(not os.path.exists(o("bad.aiff")), "and leaves no output")
 
     others(bindir, o)
+    adpcm(bindir, o)
 
     print("%d failed" % fails if fails else "all passed")
     sys.exit(1 if fails else 0)
@@ -358,6 +359,155 @@ def others(bindir, o):
     r = run(t("wav2iff"), sdir)
     check(r != 0 and open(os.path.join(sdir, "tone.aiff"), "rb").read() == before,
           "wav2iff won't write tone.aiff over itself")
+
+
+# IMA ADPCM, as the game ports' amiga/tools/ogg2wav.py adpcm writes it (the
+# reference the fallback made at install time must match, byte for byte).
+IMA_STEPS = [
+    7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45,
+    50, 55, 60, 66, 73, 80, 88, 97, 107, 118, 130, 143, 157, 173, 190, 209, 230,
+    253, 279, 307, 337, 371, 408, 449, 494, 544, 598, 658, 724, 796, 876, 963,
+    1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066, 2272, 2499, 2749, 3024, 3327,
+    3660, 4026, 4428, 4871, 5358, 5894, 6484, 7132, 7845, 8630, 9493, 10442,
+    11487, 12635, 13899, 15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794,
+    32767]
+IMA_INDEX = [-1, -1, -1, -1, 2, 4, 6, 8, -1, -1, -1, -1, 2, 4, 6, 8]
+IMA_BLOCK, IMA_SPB = 1024, 2041
+
+
+def ogg2wav_adpcm(samples, rate):
+    """ogg2wav.py's write_adpcm, unchanged but for the rate, to bytes."""
+    n = len(samples)
+    blocks = (n + IMA_SPB - 1) // IMA_SPB
+    body = bytearray()
+    index = 0
+    for b in range(blocks):
+        base = b * IMA_SPB
+        pred = samples[base] if base < n else 0
+        body += struct.pack("<hBB", pred, index, 0)
+        nib = bytearray(IMA_BLOCK - 4)
+        for k in range(1, IMA_SPB):
+            s = samples[base + k] if base + k < n else 0
+            step = IMA_STEPS[index]
+            diff = s - pred
+            code = 0
+            if diff < 0:
+                code = 8
+                diff = -diff
+            vp = step >> 3
+            if diff >= step:
+                code |= 4
+                diff -= step
+                vp += step
+            step >>= 1
+            if diff >= step:
+                code |= 2
+                diff -= step
+                vp += step
+            step >>= 1
+            if diff >= step:
+                code |= 1
+                vp += step
+            pred = pred - vp if code & 8 else pred + vp
+            pred = 32767 if pred > 32767 else -32768 if pred < -32768 else pred
+            index += IMA_INDEX[code]
+            index = 0 if index < 0 else 88 if index > 88 else index
+            j = k - 1
+            if j & 1:
+                nib[j >> 1] |= code << 4
+            else:
+                nib[j >> 1] = code
+        body += nib
+    fmt = struct.pack("<HHIIHHHH", 0x11, 1, rate, rate * IMA_BLOCK // IMA_SPB, IMA_BLOCK, 4, 2, IMA_SPB)
+    riff = (b"WAVE" + b"fmt " + struct.pack("<I", len(fmt)) + fmt +
+            b"fact" + struct.pack("<I", 4) + struct.pack("<I", n) +
+            b"data" + struct.pack("<I", len(body)) + bytes(body))
+    return b"RIFF" + struct.pack("<I", len(riff)) + riff
+
+
+def read_ima(path):
+    """A strict read of an IMA ADPCM WAV, from Microsoft's spec: (rate, frames, samples)."""
+    data = open(path, "rb").read()
+    assert data[:4] == b"RIFF" and data[8:12] == b"WAVE", "not RIFF WAVE"
+    size = struct.unpack("<I", data[4:8])[0]
+    assert size + 8 == len(data), "RIFF length %d, file %d" % (size, len(data))
+    d = dict(chunks(data, 12, 8 + size, be=False))
+    tag, ch, rate, avg, align, bits, cb, spb = struct.unpack("<HHIIHHHH", d[b"fmt "])
+    assert (tag, ch, align, bits, cb, spb) == (0x11, 1, IMA_BLOCK, 4, 2, IMA_SPB), "fmt %r" % (d[b"fmt "],)
+    assert avg == rate * IMA_BLOCK // IMA_SPB, "avg bytes %d" % avg
+    frames = struct.unpack("<I", d[b"fact"])[0]
+    body = d[b"data"]
+    assert len(body) == (frames + IMA_SPB - 1) // IMA_SPB * IMA_BLOCK, "data holds %d bytes" % len(body)
+    out = []
+    for b in range(len(body) // IMA_BLOCK):
+        blk = body[b * IMA_BLOCK:(b + 1) * IMA_BLOCK]
+        pred, index = struct.unpack("<hB", blk[:3])
+        assert index <= 88 and blk[3] == 0, "block %d header" % b
+        out.append(pred)
+        for j in range(IMA_SPB - 1):
+            code = (blk[4 + (j >> 1)] >> ((j & 1) * 4)) & 15
+            step = IMA_STEPS[index]
+            vp = step >> 3
+            if code & 4: vp += step
+            if code & 2: vp += step >> 1
+            if code & 1: vp += step >> 2
+            pred = pred - vp if code & 8 else pred + vp
+            pred = max(-32768, min(32767, pred))
+            out.append(pred)
+            index = max(0, min(88, index + IMA_INDEX[code]))
+    return rate, frames, out[:frames]
+
+
+def adpcm(bindir, o):
+    """-f adpcm: the WAV fallback a game port's installer makes from its Ogg."""
+    t = lambda n: os.path.join(bindir, n)
+    want = round(FRAMES * 22050 / RATE)
+    r = run(t("ogg2iff"), "-f", "wav", "-m", "-r", "22050", "-o", o("ima-pcm.wav"), TONE)
+    check(r == 0, "ogg2iff -f wav -m -r 22050 (the PCM the ADPCM is made from)")
+    r2 = run(t("ogg2iff"), "-f", "adpcm", "-r", "22050", "-o", o("ima.wav"), TONE)
+    check(r2 == 0, "ogg2iff -f adpcm -r 22050 (stereo in: mono out, no -m needed)")
+    if r or r2:
+        return
+    ch, rate, bits, pcm = read_wav(o("ima-pcm.wav"))
+    try:
+        irate, frames, dec = read_ima(o("ima.wav"))
+        ok = True
+    except AssertionError as e:
+        check(False, "ima.wav: strict parse: %s" % e)
+        return
+    check(ok, "ima.wav: RIFF, fmt (0x11, mono, 1024-byte blocks, 2041 samples), fact and data agree")
+    check(irate == 22050 and frames == len(pcm[0]) == want, "ima.wav: %d frames at %d Hz (want %d)" % (frames, irate, want))
+    check(open(o("ima.wav"), "rb").read() == ogg2wav_adpcm(list(pcm[0]), 22050),
+          "ima.wav: byte for byte what the ports' ogg2wav.py adpcm writes from the same samples")
+    a = level(mid(dec, irate), 440, irate, 32768)
+    b = level(mid(dec, irate), 1000, irate, 32768)
+    check(abs(a - 0.25) < 0.02 and abs(b - 0.25) < 0.02,
+          "ima.wav decoded: 440 Hz at %.3f, 1000 Hz at %.3f (want 0.25 each, the mono downmix)" % (a, b))
+    err = sum((x - y) ** 2 for x, y in zip(dec, pcm[0])) / max(1, len(dec))
+    sig = sum(x * x for x in pcm[0]) / max(1, len(pcm[0]))
+    snr = 10 * math.log10(sig / err) if err else 99
+    check(snr > 20, "ima.wav decoded: %.1f dB from the PCM it was made from" % snr)
+    r = run(t("x2iff"), "-f", "adpcm", "-r", "22050", "-o", o("ima-x.wav"), TONE)
+    check(r == 0 and open(o("ima-x.wav"), "rb").read() == open(o("ima.wav"), "rb").read(),
+          "x2iff -f adpcm writes what ogg2iff writes")
+    # an empty sound: a header and no blocks
+    r = run(t("ogg2iff"), "-f", "adpcm", "-s", "2.5", "-o", o("ima-empty.wav"), TONE)
+    if r == 0:
+        irate, frames, dec = read_ima(o("ima-empty.wav"))
+        check(frames == 0 and os.path.getsize(o("ima-empty.wav")) == 60, "an empty ADPCM sound is a 60-byte header")
+    else:
+        check(True, "an empty cut is refused (%d)" % r)
+    check(run(t("ogg2iff"), "-f", "adpcm", "-b", "8", "-o", o("ima-8.wav"), TONE) != 0, "-f adpcm -b 8 is refused")
+    check(not os.path.exists(o("ima-8.wav")), "and leaves no output")
+    check(run(t("ogg2iff"), "--decoded-here", TONE) == 0, "--decoded-here: the PC decodes it itself (0)")
+    check(run(t("ogg2iff"), "--decoded-here", os.path.join(HERE, "check.py")) == 20, "--decoded-here: not a sound (20)")
+    # a batch of a drawer: name.ogg gives name.wav beside it
+    bdir = o("ima-batch")
+    os.makedirs(bdir, exist_ok=True)
+    shutil.copy(TONE, os.path.join(bdir, "music-1.ogg"))
+    r = run(t("ogg2iff"), "-f", "adpcm", "-r", "22050", bdir)
+    got = sorted(os.listdir(bdir))
+    check(r == 0 and got == ["music-1.ogg", "music-1.wav"], "batch: music-1.ogg gives music-1.wav beside it (%s)" % got)
 
 
 main()

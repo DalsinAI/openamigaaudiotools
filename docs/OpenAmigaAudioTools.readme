@@ -2,14 +2,14 @@ Short:        Ogg/MP3/WAV/FLAC/MOD to AIFF/8SVX, through datatypes
 Author:       AmiCradle Team
 Uploader:     AmiCradle Team
 Type:         mus/misc
-Version:      1.0
+Version:      1.1
 Requires:     AmigaOS 3.0+, 68040 + FPU, GFOpenDatatypes (gfopenaiff,
               gfopenwave, gfopensound 47.2, gfopenmodule 47.4)
 Architecture: m68k-amigaos >= 3.0
 
 OpenAmigaAudioTools turns sounds and music into what an Amiga plays with
 no decoding: 16-bit big-endian AIFF (the default), IFF 8SVX for Paula,
-WAV, or raw PCM.
+WAV, IMA ADPCM WAV (mono, for a game port's music), or raw PCM.
 
   C/ogg2iff   C/mp32iff   C/wav2iff   C/flac2iff   C/mod2iff   C/x2iff
 
@@ -21,13 +21,15 @@ through datatypes:
     OIM_READSOUND where the datatype offers it.
   - The result is saved by gfopenaiff.datatype or gfopenwave.datatype
     (AIFF, WAV, raw PCM), or by sound.datatype (8SVX), with DTM_WRITE.
+  - IMA ADPCM, which no datatype writes, is encoded by the program.
   - --verify opens each result again through the datatypes.
 
   x2iff -r 22050 Music:theme.ogg TO RAM:theme.aiff
   mod2iff -f 8svx -m -r 11025 Mods/ -o Sfx/
   x2iff --info Music:theme.ogg
+  ogg2iff -f adpcm -r 22050 Games/HexAHop/data/music-1.ogg
 
-Options: -f aiff|8svx|wav|raw, -o, -r rate, -m mono, -b 8|16 (TPDF
+Options: -f aiff|8svx|wav|raw|adpcm, -o, -r rate, -m mono, -b 8|16 (TPDF
 dither on 8-bit), -e big|little, -u, -n[=dB] normalise, -g dB, -s/-t/-l
 seconds, -T[=dB] trim silence, -q 0|1|2, -i, -v, --interp, --verify.
 "x2iff -h" lists them all.
@@ -36,7 +38,7 @@ A datatype keeps the result in memory until it saves it: allow about
 5 MB a minute of 22 kHz stereo 16-bit audio. Ogg Vorbis and MP3 are
 decoded in soft float by gfopensound.datatype, slowly; FLAC and modules
 are quick. On a PC the same tools for Linux carry their own decoders
-(openamigaaudiotools-1.0-linux-*.tar.gz).
+(openamigaaudiotools-1.1-linux-*.tar.gz).
 
 Not yet run on an Amiga: built and checked on the PC.
 

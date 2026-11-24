@@ -27,7 +27,7 @@
 #ifndef X2IFF_NAME
 #define X2IFF_NAME "x2iff"
 #endif
-#define X2IFF_VERSION "1.0"
+#define X2IFF_VERSION "1.1"
 
 #if defined(__amigaos__) || defined(AMIGA)
 #define X2IFF_AMIGA 1
@@ -98,6 +98,9 @@ int dt_probe(const char *path, unsigned long *frames, int *channels, long *rate)
 /* Save frames of 16-bit interleaved pcm through datatypes: fmt 0 AIFF,
  * 1 8SVX, 2 WAV, 3 raw (x2iff.c's F_); bits 8 or 16 (8: each sample's high
  * byte is written, already dithered). 0, or -1 with the reason printed. */
+/* 1 when this CPU would decode path (no decode service takes it), 0 when a
+ * service does, -1 when no sound datatype opens it. */
+int dt_decoded_here(const char *path);
 int dt_save(const char *path, int fmt, int bits, int big_endian, int unsigned8,
             const short *pcm, unsigned long frames, int channels, long rate);
 #endif
