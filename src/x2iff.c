@@ -313,7 +313,7 @@ static int writer_put(Writer *w, float *const *in, int n)
 static int writer_close(Writer *w, int ok)
 {
     int r = !ok ? -1 : w->fmt == F_ADPCM ? adpcm_save(w) : dt_save(w->path, w->fmt, w->bits, w->o->big_endian, w->o->unsigned8,
-                         w->acc, w->frames, w->ch, w->rate) : -1;
+                         w->acc, w->frames, w->ch, w->rate);
     free(w->acc);
     free(w->path);
     return r;
