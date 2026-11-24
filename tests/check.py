@@ -499,6 +499,8 @@ def adpcm(bindir, o):
         check(True, "an empty cut is refused (%d)" % r)
     check(run(t("ogg2iff"), "-f", "adpcm", "-b", "8", "-o", o("ima-8.wav"), TONE) != 0, "-f adpcm -b 8 is refused")
     check(not os.path.exists(o("ima-8.wav")), "and leaves no output")
+    check(run(t("ogg2iff"), "--decoded-here", TONE) == 0, "--decoded-here: the PC decodes it itself (0)")
+    check(run(t("ogg2iff"), "--decoded-here", os.path.join(HERE, "check.py")) == 20, "--decoded-here: not a sound (20)")
     # a batch of a drawer: name.ogg gives name.wav beside it
     bdir = o("ima-batch")
     os.makedirs(bdir, exist_ok=True)

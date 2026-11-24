@@ -920,6 +920,9 @@ X2IFF_NAME " " X2IFF_VERSION " (OpenAmigaAudioTools): to AIFF, IFF 8SVX, WAV or 
 #ifdef X2IFF_AMIGA
 "      --verify        open each output again through datatypes afterwards\n"
 #endif
+"      --decoded-here F    return 0 when this CPU would decode F, 5 when a\n"
+"                      decode service would (an installer's question), 20 when\n"
+"                      F doesn't open\n"
 #ifdef X2IFF_AMIGA
 "tracker modules (gfopenmodule.datatype mixes them at --rate, default 44100):\n"
 "      --interp nearest|linear|spline   (default spline)\n"
@@ -1032,6 +1035,25 @@ static int real_main(int argc, char **argv)
         }
         else if (!strcmp(a, "--paula")) o.paula = 1;
         else if (!strcmp(a, "--verify")) o.verify = 1;
+        else if (!strcmp(a, "--decoded-here")) {
+            /* for an installer: return code 0 when this CPU would decode
+             * the file (a WAV fallback is worth offering), 5 when a decode
+             * service takes it, 20 when it doesn't open. The PC decodes
+             * everything itself. */
+            const char *v = arg_val(argc, argv, &i, eq);
+#ifdef X2IFF_AMIGA
+            int h = dt_decoded_here(v);
+            if (h < 0) { fprintf(stderr, X2IFF_NAME ": no sound datatype opens %s\n", v); return 20; }
+            printf("%s: %s\n", v, h ? "decoded on this CPU" : "decoded by a service");
+            return h ? 0 : 5;
+#else
+            Source *src = src_open(v, &o, 0);
+            if (!src) return 20;
+            src->close(src);
+            printf("%s: decoded on this CPU\n", v);
+            return 0;
+#endif
+        }
         else { fprintf(stderr, X2IFF_NAME ": unknown option %s\n", a); usage(stderr); return 10; }
 #undef IS
     }

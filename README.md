@@ -92,6 +92,10 @@ copy.
     modules: --interp nearest|linear|spline, --loops N, --separation P, --paula
              (on the Amiga only --interp, as gfopenmodule.datatype mixes)
     Amiga: --verify
+    --decoded-here FILE        return code 0 when this CPU would decode FILE (on the
+                               Amiga: no Mitchy, AkikoPlus or paired Cradle takes it,
+                               as OIA_DecodedBy says), 5 when a service would, 20 when
+                               it doesn't open: a game installer's question
 
 A folder as input converts every file in it that the tool reads (on the
 Amiga, every file a sound datatype opens). The Amiga's `mod.name` naming
@@ -118,7 +122,7 @@ The order of work is: decode, cut, downmix, gain, resample, quantise
 
 ## Tests
 
-`make test`, or `tests/check.py build/host`: 104 checks on the PC.
+`make test`, or `tests/check.py build/host`: 106 checks on the PC.
 
 - **Format checks:** each file written is read by a strict parser written
   from its specification (EA IFF 85 / 8SVX with CHAN, AIFF 1.3, RIFF

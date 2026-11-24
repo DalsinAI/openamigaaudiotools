@@ -263,6 +263,30 @@ int dt_probe(const char *path, unsigned long *frames, int *channels, long *rate)
     return r;
 }
 
+/* Would this CPU decode path? Opened as a reader, one piece read (a
+ * datatype may settle where it decodes only then), and OIA_DecodedBy
+ * asked: gfopensound.datatype says "this CPU (...)" when no service
+ * (Mitchy's card, AkikoPlus or a paired Cradle) takes it. 1 this CPU (or a
+ * datatype that doesn't say), 0 a service, -1 it doesn't open. */
+int dt_decoded_here(const char *path)
+{
+    Dt d;
+    STRPTR by = NULL;
+    WORD buf[2 * 64];
+    int here;
+    if (libs()) return -1;
+    memset(&d, 0, sizeof d);
+    d.path = (char *)path;
+    d.mixRate = 22050;
+    d.interp = 1;
+    if (!(d.obj = dt_new(&d))) return -1;
+    DoMethod(d.obj, OIM_READSOUND, NULL, (ULONG)buf, 64UL);
+    GetDTAttrs(d.obj, OIA_Dummy + 1, (ULONG)&by, TAG_DONE);     /* OIA_DecodedBy */
+    here = !by || !strncmp((const char *)by, "this CPU", 8);
+    DisposeDTObject(d.obj);
+    return here;
+}
+
 /* Batches: every file is offered to the datatypes (src_open says no to
  * what isn't a sound); x2iff.c leaves out its own output's kind. */
 int src_takes_name(const char *name)
