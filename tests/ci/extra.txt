@@ -1,0 +1,2 @@
+# name @ paths: command, run from the top of the repository (the paths: a change there runs it)
+make-test @ src tests patches Makefile: make test

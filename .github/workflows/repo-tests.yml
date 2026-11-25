@@ -1,0 +1,25 @@
+name: Repo tests
+# LV-16, Dale's model (24 Nov 2026): a pull request runs the tests its change touches; the whole set
+# runs in the nightly regression (01:30 UTC, inside the 23:00-06:00 slot) and on demand.
+# tests/ci/test_all.sh finds the tests and picks them (TEST_BASE).
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '30 1 * * *'
+  workflow_dispatch:
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: The runner's own test
+        run: sh tests/ci_runner/test_ci_runner.sh
+      - name: The tests this change touches (every test at night)
+        env:
+          TEST_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event_name == 'push' && github.event.before || '' }}
+        run: sh tests/ci/test_all.sh
